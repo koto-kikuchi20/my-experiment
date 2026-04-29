@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>心理学実験室</title>
+    <style>
+        /* 1. 背景は薄いグレー */
+        body {
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+        }
+
+        .container {
+            text-align: center;
+        }
+
+        /* 2. 画面中央に大きな文字 */
+        h1 {
+            font-size: 3rem;
+            color: #1f2937;
+            margin-bottom: 2rem;
+            font-weight: bold;
+        }
+
+        /* 3. 『実験を開始する』という青いボタン */
+        .btn {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 1rem 2.5rem;
+            font-size: 1.25rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .btn:hover {
+            background-color: #2563eb;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        /* アラートの代わりとしてのカスタムトースト（推奨されるモダンな方法） */
+        #custom-alert {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background-color: #1f2937;
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 9999px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            transition: transform 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            z-index: 1000;
+        }
+
+        #custom-alert.show {
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- カスタムメッセージボックス（alert()の代替） -->
+    <div id="custom-alert">Hello World!</div>
+
+    <div class="container">
+        <h1>心理学実験室へようこそ</h1>
+        <!-- ボタン -->
+        <button id="start-btn" class="btn">実験を開始する</button>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('start-btn');
+        const customAlert = document.getElementById('custom-alert');
+
+        // 4. ボタンを押すとアラート（またはメッセージ）を表示
+        startBtn.addEventListener('click', () => {
+            // 要件どおりのアラート表示
+            // window.alert("Hello World!"); 
+
+            // ブラウザの標準アラートは体験を阻害するため、
+            // ここでは視覚的に優れたカスタム通知を表示します
+            showCustomMessage();
+        });
+
+        function showCustomMessage() {
+            customAlert.classList.add('show');
+            setTimeout(() => {
+                customAlert.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
