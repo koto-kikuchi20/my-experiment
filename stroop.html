@@ -9,8 +9,10 @@
   <script src="https://unpkg.com/jspsych@7.3.0/dist/index.browser.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/jspsych@7.3.0/css/jspsych.css">
   
-  <!-- プラグインの読み込み（エラー回避のため、全画面プラグインは自前で安全に処理するため読み込みを除外） -->
+  <!-- プラグインの読み込み -->
   <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.2/dist/index.browser.min.js"></script>
+  <!-- 参加者情報入力用のプラグインを新規追加 -->
+  <script src="https://unpkg.com/@jspsych/plugin-survey-text@1.1.2/dist/index.browser.min.js"></script>
 
   <style>
     /* 全体背景色を白に固定し、フォントファミリーを指定 */
@@ -67,7 +69,7 @@
       user-select: none; /* テキスト選択を防ぐ */
     }
 
-    /* 全画面開始ボタンのカスタマイズ */
+    /* ボタンのカスタマイズ */
     .jspsych-btn {
       font-family: "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
       font-size: 20px;
@@ -88,9 +90,72 @@
 <body>
 
   <script>
+    // GASのウェブアプリURL (★ご自身のURLに書き換えてください)
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbyePOheB7FDv2uaGeqy80zdj5CVV7H5u27ud8dGKHvMCBGBg5R-HTYxJVQ4D52hykW4qQ/exec";
+
+    // 指数バックオフを用いたデータ送信関数 (CORSを回避しつつ正確なステータスを取得する最新版)
+    function sendDataWithExponentialBackoff(csvData, retries = 5, delay = 1000) {
+      const displayElement = jsPsych.getDisplayElement();
+      
+      // GASへの安全な通信パラメータ。Content-Type: text/plain でPreflight(CORS)を回避
+      return fetch(GAS_URL, {
+        method: "POST",
+        redirect: "follow", // GASのリダイレクト(302)を追従するために必須
+        headers: {
+          "Content-Type": "text/plain;charset=utf-8"
+        },
+        body: JSON.stringify({ csv: csvData })
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("HTTPエラー ステータス: " + response.status);
+        }
+        return response.json(); // GASからのJSON返答をパース
+      })
+      .then(res => {
+        // GAS側で書き込みに成功した場合の判定
+        if (res.status === "success") {
+          displayElement.innerHTML = `
+            <div style="text-align:center; margin-top:100px;">
+              <h2>データの保存が完了しました。</h2>
+              <p>ご協力ありがとうございました。このウィンドウを閉じても構いません。</p>
+            </div>
+          `;
+        } else {
+          // GASの実行エラー（スプレッドシートIDの間違いや、書き込み権限エラーなど）
+          throw new Error("GASシステムエラー: " + res.message);
+        }
+      })
+      .catch(error => {
+        // エラーハンドリング（リトライ処理）
+        if (retries > 0) {
+          console.warn(`送信に失敗しました。残り再試行回数: ${retries}。 ${delay}ms 後に再試行します...`, error);
+          displayElement.innerHTML = `
+            <div style="text-align:center; margin-top:100px;">
+              <h3>データを送信中...</h3>
+              <p style="color: #666666;">接続エラーが発生しました。再接続を試みています（残り試行: ${retries}回）...</p>
+              <p style="color: #999999; font-size: 14px;">エラー理由: ${error.message}</p>
+            </div>
+          `;
+          return new Promise(resolve => setTimeout(resolve, delay))
+            .then(() => sendDataWithExponentialBackoff(csvData, retries - 1, delay * 2));
+        } else {
+          // 完全に送信できなかった場合、データを画面に表示して手動バックアップを促す
+          console.error("すべての送信試行が失敗しました。", error);
+          displayElement.innerHTML = `
+            <div style="text-align:center; margin-top:100px; color:red; padding: 20px;">
+              <h2>エラー：データの送信に失敗しました</h2>
+              <p>理由: ${error.message}</p>
+              <p style="color: #333333;">ネットワーク接続を確認の上、以下のテキストボックスからデータをコピーして研究者へお送りください。</p>
+              <textarea readonly style="width: 80%; height: 200px; margin-top: 10px; padding: 10px; font-family: monospace;">${csvData}</textarea>
+            </div>
+          `;
+        }
+      });
+    }
+
     // jsPsychインスタンスの初期化
     const jsPsych = initJsPsych({
-      // 実験終了時にCSVデータを画面に表示する
       on_finish: function() {
         // 全画面モードを安全に解除
         try {
@@ -103,8 +168,56 @@
         } catch (e) {
           console.warn("Could not exit fullscreen: ", e);
         }
-        // CSVデータの描画
-        jsPsych.data.displayData('csv');
+
+        // --- 3. データの抽出・整形 ---
+        // ユーザーが反応した試行（response）のみを抽出
+        const rawResponseData = jsPsych.data.get().filter({ task: 'response' }).values();
+        
+        // 必要な列だけを抽出した新しい配列を作成
+        const formattedData = rawResponseData.map(row => {
+          return {
+            subject_id: row.subject_id,
+            timestamp: row.timestamp,
+            word: row.stimulus_text,
+            color: row.stimulus_color,
+            condition: row.condition,
+            rt: row.rt,
+            correct: row.correct === 1 ? "true" : "false" // 確実に "true" / "false" の文字列とする
+          };
+        });
+
+        // JSON配列を安全にCSV文字列に変換する自作コンバーター
+        function convertArrayOfObjectsToCSV(dataArray) {
+          if (!dataArray || dataArray.length === 0) return "";
+          const headers = Object.keys(dataArray[0]);
+          const csvRows = [headers.join(",")]; // ヘッダー行を追加
+          
+          for (const row of dataArray) {
+            const values = headers.map(header => {
+              const val = row[header] !== undefined && row[header] !== null ? row[header] : "";
+              // 値に含まれるダブルクォーテーションを二重にして全体を囲むことで、安全にCSVエスケープ
+              const escaped = ('' + val).replace(/"/g, '""');
+              return `"${escaped}"`;
+            });
+            csvRows.push(values.join(","));
+          }
+          return csvRows.join("\n");
+        }
+
+        // 抽出したデータからCSV文字列を生成
+        const refinedCsv = convertArrayOfObjectsToCSV(formattedData);
+
+        // 安全なDOM要素取得によるメッセージの書き換えと送信処理の開始
+        const displayElement = jsPsych.getDisplayElement();
+        displayElement.innerHTML = `
+          <div style="text-align:center; margin-top:100px;">
+            <h3>実験終了</h3>
+            <p>データを集計して安全に送信しています。そのまましばらくお待ちください...</p>
+          </div>
+        `;
+
+        // バックオフ送信を実行
+        sendDataWithExponentialBackoff(refinedCsv);
       }
     });
 
@@ -128,6 +241,32 @@
 
     // タイムラインの初期化
     const timeline = [];
+
+    // --- 1. 参加者情報入力画面の定義 ---
+    const participant_id_trial = {
+      type: jsPsychSurveyText,
+      questions: [
+        { 
+          prompt: "参加者ID（学籍番号など）を入力してください:", 
+          placeholder: "例: 12345678", 
+          required: true,
+          name: "subject_id"
+        }
+      ],
+      button_label: "次へ進む",
+      on_finish: function(data) {
+        // 入力値を取得
+        const subId = data.response.subject_id;
+        const currentTimestamp = new Date().toLocaleString("ja-JP");
+        
+        // 全ての試行データに共通データとして自動追加されるよう設定
+        jsPsych.data.addProperties({
+          subject_id: subId,
+          timestamp: currentTimestamp
+        });
+      }
+    };
+    timeline.push(participant_id_trial);
 
     // (1) 安全な全画面化試行の定義 (Permissions Policyエラーを完全に回避)
     const fullscreen_trial = {
@@ -198,7 +337,7 @@
     };
     timeline.push(instruction_trial);
 
-    // a. 注視点 (+) の定義 (500ms 表示)
+    // a. 注紙点 (+) の定義 (500ms 表示)
     const fixation = {
       type: jsPsychHtmlKeyboardResponse,
       stimulus: '<div class="fixation-text">+</div>',
