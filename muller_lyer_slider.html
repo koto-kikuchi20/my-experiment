@@ -1,0 +1,214 @@
+/**
+ * jsPsychのCSV/JSONデータをGoogleスプレッドシートの末尾に自動追記するGASスクリプト
+ * * 【導入手順】
+ * 1. Googleスプレッドシートを新規作成または開き、ブラウザのURLからスプレッドシートIDをコピーします。
+ * （例: https://docs.google.com/spreadsheets/d/[この部分がID]/edit）
+ * 2. 下記の `SPREADSHEET_ID` 変数にコピーしたIDを貼り付けます。
+ * 3. 必要に応じて、書き込み対象のシート名 `SHEET_NAME` を変更します（デフォルトは "シート1"）。
+ * 4. GASエディタの画面右上「デプロイ」＞「新しいデプロイ」をクリックします。
+ * 5. 種類の選択で「ウェブアプリ」を選択します。
+ * 6. 設定を以下のように変更してデプロイします。
+ * - 次のユーザーとして実行: 「自分（あなたのメールアドレス）」
+ * - アクセスできるユーザー: 「全員（匿名ユーザーを含む）」
+ * 7. 発行された「ウェブアプリのURL」を、jsPsychのデータ送信先（fetch等）に指定します。
+ */
+
+// --- 設定項目 ---
+const SPREADSHEET_ID = '17Hx9nT0TqZiQ5BrM5DUF7FRk7iuR04XmPilPafalwcs'; // ここにスプレッドシートIDを入力してください
+const SHEET_NAME = 'Sheet1';                       // データを追記するシート名
+
+/**
+ * POSTリクエストを受け取る関数
+ * @param {Object} e - イベントオブジェクト
+ * @return {TextOutput} レスポンス
+ */
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    // 同時アクセスによる書き込み衝突を防ぐため、最大30秒間ロックを取得する
+    if (!lock.tryLock(30000)) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'サーバーが混雑しています。ロックを取得できませんでした。'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // スプレッドシートとシートの取得
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet = ss.getSheetByName(SHEET_NAME);
+    if (!sheet) {
+      // 指定したシートが存在しない場合は新規作成
+      sheet = ss.insertSheet(SHEET_NAME);
+    }
+
+    // 送信されてきたデータのパース
+    let postData = '';
+    if (e.postData && e.postData.contents) {
+      postData = e.postData.contents;
+    } else {
+      throw new Error('データが空、または正しく送信されませんでした。');
+    }
+
+    let rows = [];
+
+    // 送信データが JSON か CSV かを判定してパースする
+    if (isJson(postData)) {
+      const jsonData = JSON.parse(postData);
+      rows = parseJsonData(jsonData, sheet);
+    } else {
+      // CSVデータとしてパースする
+      rows = parseCsvData(postData);
+    }
+
+    // データの書き込み
+    if (rows.length > 0) {
+      // 空白行を除外
+      const validRows = rows.filter(row => row.length > 0 && row.some(cell => cell !== ''));
+      if (validRows.length > 0) {
+        const lastRow = sheet.getLastRow();
+        sheet.getRange(lastRow + 1, 1, validRows.length, validRows[0].length).setValues(validRows);
+      }
+    }
+
+    // 成功レスポンスを返す（CORS対応のためJSONを返す）
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      message: `${rows.length} 件のデータを追記しました。`
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    // エラーレスポンス
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'error',
+      message: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } finally {
+    // ロックを解除
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 文字列がJSON形式かどうかを判定する
+ */
+function isJson(str) {
+  try {
+    JSON.parse(str);
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * CSV形式の文字列を2次元配列に変換する（簡易RFC 4180対応）
+ */
+function parseCsvData(csvText) {
+  const lines = [];
+  let row = [""];
+  let inQuotes = false;
+
+  for (let i = 0; i < csvText.length; i++) {
+    const c = csvText[i];
+    const next = csvText[i + 1];
+
+    if (c === '"') {
+      if (inQuotes && next === '"') {
+        // エスケープされたダブルクォーテーション ("")
+        row[row.length - 1] += '"';
+        i++;
+      } else {
+        // クォートの開始または終了
+        inQuotes = !inQuotes;
+      }
+    } else if (c === ',' && !inQuotes) {
+      // カンマ（区切り文字）
+      row.push('');
+    } else if ((c === '\r' || c === '\n') && !inQuotes) {
+      // 改行
+      if (c === '\r' && next === '\n') {
+        i++;
+      }
+      lines.push(row);
+      row = [''];
+    } else {
+      // 通常文字
+      row[row.length - 1] += c;
+    }
+  }
+  if (row.length > 1 || row[0] !== '') {
+    lines.push(row);
+  }
+
+  // jsPsychのCSV出力は1行目がヘッダー（カラム名）になることが多いため、
+  // シートにすでにデータがある場合はヘッダー行をスキップしてデータ行のみを抽出します。
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEET_NAME);
+  if (sheet && sheet.getLastRow() > 0 && lines.length > 1) {
+    // すでにヘッダー（1行目）が存在する場合は、ヘッダー行（インデックス0）を削除して返す
+    return lines.slice(1);
+  }
+
+  return lines;
+}
+
+/**
+ * JSONデータ（オブジェクト配列等）をシートの構造に合わせて2次元配列に変換する
+ */
+function parseJsonData(jsonData, sheet) {
+  let dataArray = [];
+  if (Array.isArray(jsonData)) {
+    dataArray = jsonData;
+  } else if (typeof jsonData === 'object') {
+    dataArray = [jsonData];
+  } else {
+    throw new Error('サポートされていないJSON形式です。配列またはオブジェクトである必要があります。');
+  }
+
+  if (dataArray.length === 0) return [];
+
+  // スプレッドシートの既存のヘッダー（1行目）を取得
+  let headers = [];
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 0) {
+    headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  }
+
+  // 送信データ内にあるすべてのキー（カラム名）を抽出・統合
+  const allKeys = [];
+  dataArray.forEach(obj => {
+    Object.keys(obj).forEach(key => {
+      if (allKeys.indexOf(key) === -1) {
+        allKeys.push(key);
+      }
+    });
+  });
+
+  // シートが空の場合、取得したすべてのキーをヘッダーとして1行目に書き込む
+  if (headers.length === 0 || (headers.length === 1 && headers[0] === '')) {
+    headers = allKeys;
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    // 既存のヘッダーにない新しいキーがあれば、右端に追加する
+    const newKeys = allKeys.filter(key => headers.indexOf(key) === -1);
+    if (newKeys.length > 0) {
+      const startCol = headers.length + 1;
+      sheet.getRange(1, startCol, 1, newKeys.length).setValues([newKeys]);
+      headers = headers.concat(newKeys);
+    }
+  }
+
+  // ヘッダーの順序に従って、JSONデータを2次元配列にマッピングする
+  const rows = dataArray.map(obj => {
+    return headers.map(header => {
+      const val = obj[header];
+      // オブジェクトや配列は文字列化して格納
+      if (typeof val === 'object' && val !== null) {
+        return JSON.stringify(val);
+      }
+      return val !== undefined ? val : '';
+    });
+  });
+
+  return rows;
+}
