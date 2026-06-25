@@ -26,7 +26,7 @@
             --card-bg: #ffffff;         /* 純白（カード用） */
             --shadow: 0 10px 30px rgba(240, 160, 176, 0.08);
             --shadow-hover: 0 20px 40px rgba(160, 196, 255, 0.2);
-            --radius: 16px;             /* 角丸の基準値 */
+            --radius: 16px;              /* 角丸の基準値 */
             --transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -145,6 +145,7 @@
             grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 32px;
             margin-top: 40px;
+            align-items: stretch;
         }
 
         /* カードの共通スタイル */
@@ -244,7 +245,17 @@
             min-height: 72px;
         }
 
-        /* リンクボタン */
+        /* ボタンアクションのコンテナ */
+        .card-actions-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* リンクボタンの基本スタイル */
         .card-btn {
             display: inline-flex;
             align-items: center;
@@ -261,8 +272,6 @@
             transition: var(--transition);
             border: none;
             cursor: pointer;
-            position: relative;
-            z-index: 1;
             box-shadow: 0 4px 12px rgba(240, 160, 176, 0.25);
         }
 
@@ -300,6 +309,53 @@
             background-color: var(--primary-light);
             color: var(--primary-dark);
             border-color: var(--primary-dark);
+        }
+
+        /* プレレジストレーション用アウトラインボタン（EX 2用） */
+        .card-btn-outline {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 12px 24px;
+            background: transparent;
+            color: var(--secondary-dark);
+            border: 2px solid var(--secondary);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.95rem;
+            border-radius: 12px;
+            transition: var(--transition);
+            box-sizing: border-box;
+        }
+
+        .card-btn-outline:hover {
+            background-color: var(--secondary-light);
+            border-color: var(--secondary-dark);
+            color: var(--secondary-dark);
+        }
+
+        /* 変更履歴用サブリンク（EX 2用） */
+        .card-btn-sub {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            width: 100%;
+            padding: 8px 16px;
+            background: transparent;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: var(--transition);
+        }
+
+        .card-btn-sub:hover {
+            color: var(--text-color);
+            background-color: rgba(160, 196, 255, 0.1);
         }
 
         /* フッター */
@@ -401,10 +457,12 @@
                             <h2 class="card-title">はじめてのWebページ</h2>
                             <p class="card-text">第2回講義で作成した、記念すべき「Hello World」を表示するシンプルなオリジナルページです。</p>
                         </div>
-                        <a href="hello_world.html" class="card-btn">
-                            <span>Hello Worldを見る</span>
-                            <i class="fa-solid fa-arrow-right"></i>
-                        </a>
+                        <div class="card-actions-group">
+                            <a href="hello_world.html" class="card-btn">
+                                <span>Hello Worldを見る</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                        </div>
                     </article>
 
                     <!-- 実験1：ストループ課題 -->
@@ -417,10 +475,12 @@
                             <h2 class="card-title">ストループ課題</h2>
                             <p class="card-text">「文字の意味」と「文字の色」が一致しないときに生じる脳の干渉を調べる、簡単なキーボード入力テストです。</p>
                         </div>
-                        <a href="stroop.html" class="card-btn">
-                            <span>実験1に参加する</span>
-                            <i class="fa-solid fa-arrow-right"></i>
-                        </a>
+                        <div class="card-actions-group">
+                            <a href="stroop.html" class="card-btn">
+                                <span>実験1に参加する</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                        </div>
                     </article>
 
                     <!-- 実験2：ミュラー・リヤー錯視 -->
@@ -433,10 +493,23 @@
                             <h2 class="card-title">ミュラー・リヤー錯視</h2>
                             <p class="card-text">矢印の向きによって線分の長さが違って見える目の錯覚を測定します。スライダーを使って直感的に調整するテストです。</p>
                         </div>
-                        <a href="muller_lyer_final.html" class="card-btn">
-                            <span>実験2に参加する</span>
-                            <i class="fa-solid fa-arrow-right"></i>
-                        </a>
+                        <div class="card-actions-group">
+                            <!-- メインアクションボタン：実験開始 -->
+                            <a href="muller_lyer_final.html" class="card-btn">
+                                <span>実験2に参加する</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </a>
+                            <!-- サブアクション：プレレジ本文 -->
+                            <a href="https://github.com/koto-kikuchi20/my-experiment/blob/main/preregistration.md" target="_blank" rel="noopener noreferrer" class="card-btn-outline">
+                                <i class="fa-solid fa-file-contract"></i>
+                                <span>プレレジを確認する</span>
+                            </a>
+                            <!-- サードアクション：変更履歴 -->
+                            <a href="https://github.com/koto-kikuchi20/my-experiment/commits/main/preregistration.md" target="_blank" rel="noopener noreferrer" class="card-btn-sub">
+                                <i class="fa-solid fa-clock-rotate-left"></i>
+                                <span>変更履歴（証拠）を確認する</span>
+                            </a>
+                        </div>
                     </article>
 
                 </div>
